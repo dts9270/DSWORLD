@@ -58,7 +58,6 @@
   <div class="topbar" id="topbar" title="">
     <div class="avatar" id="avatar">N</div>
     <div>
-      <!-- Fake app identity (generic) -->
       <div class="title" id="contactTitle">Notes</div>
       <div class="subtitle" id="contactSub">Personal</div>
     </div>
@@ -86,12 +85,12 @@
 <!-- Code entry modal (disguised PIN) -->
 <div id="codeModal">
   <div class="codeBox" role="dialog" aria-modal="true">
-    <input id="codeField" class="pinInput" placeholder="Enter PIN" autocomplete="off" />
+    <input id="codeField" class="pinInput" placeholder="Access Note Key" autocomplete="off" />
     <div style="display:flex;gap:8px">
-      <button class="pinBtn" id="codeEnter">Open</button>
+      <button class="pinBtn" id="codeEnter">Unlock</button>
       <button class="pinBtn" id="codeCancel" style="background:#e0e0e0;color:#000">Close</button>
     </div>
-    <div class="smallNote">Enter the PIN you share with your contact.</div>
+    <div class="smallNote">Enter your private note access code.</div>
   </div>
 </div>
 
@@ -106,7 +105,7 @@
   </div>
 </div>
 
-<!-- block overlay shown momentarily to prevent clean screenshots -->
+<!-- block overlay -->
 <div id="blockOverlay"><div>Protected</div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl.min.js"></script>
@@ -137,7 +136,8 @@ const SIGNAL_URL = "wss://free-signalling-chat.vercel.app/onlyus";
 /* ----------------- STATE ----------------- */
 let ws = null, pc = null, dc = null;
 let myKey = null, theirKey = null;
-let aesKey = null; // AES-GCM CryptoKey
+let aesKey = null; // CryptoKey
+let aesRawBytes = null;
 let lastPin = null;
 let peerJoined = false;
 let fakeMode = false;
@@ -226,9 +226,10 @@ codeEnter.addEventListener('click', async ()=>{
   if(ws) return;
   const pin = codeField.value.trim(); if(!pin) return;
   lastPin = pin;
-  const { seed, aesKey: importedAES } = await deriveKeys(pin);
+  const { seed, aesKey: importedAES, aesRaw } = await deriveKeys(pin);
   myKey = nacl.sign.keyPair.fromSeed(seed);
   aesKey = importedAES;
+  aesRawBytes = aesRaw;
   ws = new WebSocket(SIGNAL_URL);
   ws.onopen = ()=>{ ws.send(JSON.stringify({type:'join'})); ws.send(JSON.stringify({type:'pub', pub:Array.from(myKey.publicKey)})); };
   ws.onmessage = async (ev) => {
@@ -240,15 +241,21 @@ codeEnter.addEventListener('click', async ()=>{
     if(d.type === 'ice'){ try{ await pc.addIceCandidate(d.c); }catch(e){} }
   };
   codeModal.style.display = 'none';
-  // start decoy if no peer after 6s
-  setTimeout(()=>{ if(!peerJoined) startFakeDecoy(); }, 6000);
+  // start decoy if no peer after 40s (longer window for mobile-to-mobile)
+  setTimeout(()=>{ if(!peerJoined) startFakeDecoy(); }, 40000);
 });
 codeCancel.addEventListener('click', ()=>{ codeModal.style.display='none'; });
 
-/* ---------- WebRTC ---------- */
+/* ---------- WebRTC with TURN added ---------- */
 async function startRTC(initiator){
   if(pc) return;
-  pc = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+  pc = new RTCPeerConnection({
+    iceServers:[
+      { urls: "stun:stun.l.google.com:19302" },
+      // TURN server (example public/free-ish) — replace with paid TURN for production reliability
+      { urls: "turn:relay1.expressturn.com:3478", username: "efree", credential: "efree" }
+    ]
+  });
   pc.onicecandidate = e => { if(e.candidate && ws) ws.send(JSON.stringify({type:'ice', c:e.candidate})); };
   if(initiator){
     dc = pc.createDataChannel('onlyus'); setupDC();
@@ -257,6 +264,7 @@ async function startRTC(initiator){
     pc.ondatachannel = e => { dc = e.channel; setupDC(); };
   }
 }
+
 function setupDC(){
   dc.onopen = ()=>{};
   dc.onmessage = async (ev) => {
@@ -270,26 +278,34 @@ function setupDC(){
   };
 }
 
-/* ---------- Send ---------- */
+/* ---------- Send (local display + try send if connected) ---------- */
 document.getElementById('sendBtn').addEventListener('click', sendMessage);
 messageInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); sendMessage(); }});
 async function sendMessage(){
   const txt = messageInput.value.trim();
   if(!txt && fileInput.files.length === 0) return;
+
+  // Always show locally immediately
+  if(txt){ addMessage(txt,'me'); }
+
+  // Try to send over DC if ready and we have peer key
   if(txt && dc && dc.readyState === 'open' && theirKey){
-    const pkt = {t:'msg', text:txt, ts:Date.now()};
-    const jsonStr = JSON.stringify(pkt);
-    const aesB64 = await aesEncrypt(aesKey, jsonStr);
-    const boxed = naclBoxEncrypt(theirKey, aesB64);
-    dc.send(boxed);
-    addMessage(txt,'me');
-    messageInput.value = '';
-  } else if(fileInput.files.length && dc && dc.readyState === 'open' && theirKey){
+    try{
+      const pkt = {t:'msg', text:txt, ts:Date.now()};
+      const jsonStr = JSON.stringify(pkt);
+      const aesB64 = await aesEncrypt(aesKey, jsonStr);
+      const boxed = naclBoxEncrypt(theirKey, aesB64);
+      dc.send(boxed);
+    }catch(e){ console.error('send failed', e); }
+  }
+
+  // file send (if selected)
+  if(fileInput.files.length && dc && dc.readyState === 'open' && theirKey){
     sendFile(fileInput.files[0]);
     filePreview.innerHTML=''; fileInput.value='';
-  } else {
-    if(txt){ addMessage(txt,'me'); messageInput.value=''; }
   }
+
+  messageInput.value='';
 }
 
 /* ---------- Files ---------- */
@@ -303,7 +319,7 @@ async function sendFile(f){
     const aesB64 = await aesEncrypt(aesKey, jsonStr);
     const boxed = naclBoxEncrypt(theirKey, aesB64);
     dc.send(boxed);
-    addMessage('📁 '+f.name,'me');
+    addMessage('📁 '+escapeHtml(f.name),'me');
   };
   r.readAsDataURL(f);
 }
@@ -337,12 +353,6 @@ unlockBtn.addEventListener('click', ()=>{ const v = unlockField.value.trim(); if
 window.addEventListener('keyup', (e)=>{ if(e.key === 'PrintScreen'){ blockOverlay.style.display = 'flex'; setTimeout(()=>blockOverlay.style.display = 'none', 600); } });
 
 /* ---------- Hidden gesture: triple swipe-up (top-left zone) ---------- */
-/*
-  Behavior:
-  - The small invisible gestureZone in top-left listens for vertical swipe gestures.
-  - If user performs three quick upward swipes (each swipe deltaY < -30) within 1200ms total, reveal code modal/unlock.
-  - Vibration feedback on supported devices.
-*/
 (function setupHiddenGesture(){
   let swipeCount = 0;
   let lastTime = 0;
@@ -353,51 +363,35 @@ window.addEventListener('keyup', (e)=>{ if(e.key === 'PrintScreen'){ blockOverla
     if(navigator.vibrate) try{ navigator.vibrate(duration); }catch(e){}
   }
 
-  gestureZone.addEventListener('pointerdown', (e)=>{
-    startY = e.clientY;
-  });
-
+  gestureZone.addEventListener('pointerdown', (e)=>{ startY = e.clientY; });
   gestureZone.addEventListener('pointerup', (e)=>{
     if(startY === null) return;
     const dy = e.clientY - startY;
     const now = Date.now();
-    // upward swipe (negative dy) threshold
     if(dy < -30){
       if(swipeCount === 0) lastTime = now;
       swipeCount++;
       vib(40);
-      // reset timeout
       if(gestureTimeout) clearTimeout(gestureTimeout);
       gestureTimeout = setTimeout(()=>{ swipeCount = 0; startY = null; }, 1200);
-      // if three within window -> trigger
       if(swipeCount >= 3 && (now - lastTime) <= 1200){
-        swipeCount = 0;
-        startY = null;
+        swipeCount = 0; startY = null;
         if(typeof window.navigator.vibrate === 'function') vib(80);
-        // if unlock overlay already visible, focus input; else show code modal (unlock)
-        if(unlockOverlay.style.display === 'flex'){
-          unlockField.focus();
-        } else {
-          // if app was wiped or hidden, prefer unlock overlay; otherwise show code modal to re-enter PIN
-          if(document.hidden || messagesEl.innerHTML.trim() === ''){
-            unlockOverlay.style.display = 'flex';
-            unlockField.focus();
-          } else {
-            codeModal.style.display = 'flex';
-            codeField.focus();
-          }
+        if(unlockOverlay.style.display === 'flex'){ unlockField.focus(); }
+        else {
+          if(document.hidden || messagesEl.innerHTML.trim() === ''){ unlockOverlay.style.display = 'flex'; unlockField.focus(); }
+          else { codeModal.style.display = 'flex'; codeField.focus(); }
         }
       }
     }
     startY = null;
   });
 
-  // also support quick tap sequence fallback (3 quick taps inside zone)
   let tapCount = 0;
   gestureZone.addEventListener('click', (e)=>{
     tapCount++;
     setTimeout(()=>{ tapCount = 0; }, 700);
-    if(tapCount >= 4){ // 4 quick taps to avoid accidental
+    if(tapCount >= 4){
       tapCount = 0;
       vib(60);
       codeModal.style.display = 'flex';
@@ -411,4 +405,4 @@ function escapeHtml(s){ return String(s).replace(/[&<>"']/g, (m)=>({ '&':'&amp;'
 
 </script>
 </body>
-        </html>
+</html>
