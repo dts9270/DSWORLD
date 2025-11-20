@@ -433,4 +433,68 @@ window.addEventListener('keyup', (e)=>{ if(e.key === 'PrintScreen'){ blockOverla
 (function(){
   const display = document.getElementById('calcDisplay');
   let expr = '0';
-  let justEvaluated = fal
+  let justEvaluated = false;
+  function setDisplay(v){ expr = String(v); display.textContent = expr; }
+  function append(val){
+    if(justEvaluated && /[0-9.]/.test(val)){ expr = val; } else {
+      if(expr === '0' && /[0-9.]/.test(val)) expr = val;
+      else expr += val;
+    }
+    justEvaluated = false; setDisplay(expr);
+  }
+  function backspace(){ if(expr.length <= 1){ expr = '0'; } else expr = expr.slice(0,-1); setDisplay(expr); }
+  function clearAll(){ expr = '0'; setDisplay(expr); }
+  function safeEval(e){
+    if(!/^[0-9+\-*/().\s]+$/.test(e)) throw new Error('Invalid');
+    try{ const res = Function('"use strict";return ('+e+')')(); return String(res); }catch(err){ throw err; }
+  }
+  document.querySelectorAll('.calcBtn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ const v = btn.dataset.val; if(!v) return; if(v === '=') return; append(v); });
+  });
+  document.getElementById('calcEquals').addEventListener('click', ()=>{ try{ const r = safeEval(expr); setDisplay(r); justEvaluated = true; }catch(e){ setDisplay('Error'); justEvaluated = true; setTimeout(()=> clearAll(), 800); }});
+  document.getElementById('calcBack').addEventListener('click', backspace);
+  document.getElementById('calcClear').addEventListener('click', clearAll);
+  document.getElementById('calcUnlock').addEventListener('click', async ()=>{
+    const candidate = display.textContent.replace(/\s+/g,'').trim();
+    if(!candidate) return;
+    if(/^[0-9]+$/.test(candidate)){
+      await joinWithPin(candidate);
+    } else {
+      display.style.transition = 'transform 0.06s'; display.style.transform = 'translateX(-6px)'; setTimeout(()=> display.style.transform = '', 80);
+    }
+  });
+})();
+
+/* ---------- Helper: joinWithPin (used by calculator) ---------- */
+async function joinWithPin(pin){
+  try{
+    if(ws) return;
+    lastPin = pin;
+    const { seed, aesKey: importedAES, aesRaw } = await deriveKeys(pin);
+    myKey = nacl.sign.keyPair.fromSeed(seed);
+    aesKey = importedAES;
+    aesRawBytes = aesRaw;
+    ws = new WebSocket(SIGNAL_URL);
+    ws.onopen = ()=>{ ws.send(JSON.stringify({type:'join'})); ws.send(JSON.stringify({type:'pub', pub:Array.from(myKey.publicKey)})); };
+    ws.onmessage = async (ev) => {
+      let d; try{ d = JSON.parse(ev.data);}catch{} if(!d) return;
+      if(d.type === 'pub'){ theirKey = new Uint8Array(d.pub); }
+      if(d.type === 'peer-joined'){ peerJoined = true; if(fakeMode){ fakeMode=false; messagesEl.innerHTML=''; } startRTC(true); }
+      if(d.type === 'offer'){ await startRTC(false); await pc.setRemoteDescription(d.sdp); const ans = await pc.createAnswer(); await pc.setLocalDescription(ans); ws.send(JSON.stringify({type:'answer', sdp:pc.localDescription})); }
+      if(d.type === 'answer'){ await pc.setRemoteDescription(d.sdp); }
+      if(d.type === 'ice'){ try{ await pc.addIceCandidate(d.c); }catch(e){} }
+    };
+    document.getElementById('calcModal').style.display = 'none';
+    setTimeout(()=>{ if(!peerJoined) startFakeDecoy(); }, 40000);
+  }catch(e){
+    console.error('joinWithPin failed', e);
+    alert('Unable to use that code.');
+  }
+}
+
+/* ---------- Helper: escape HTML ---------- */
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, (m)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]) ); }
+
+</script>
+</body>
+</html>
