@@ -1,12 +1,12 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Messages</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Notes</title>
 <style>
   :root{
-    --primary:#25D366; /* whatsapp-like green */
+    --primary:#25D366;
     --bg:#ECE5DD;
     --bubble-me:#DCF8C6;
     --bubble-peer:#FFFFFF;
@@ -20,20 +20,16 @@
     --bubble-peer:#122024;
     --muted:#9aa0a0;
   }
-  html,body{height:100%;margin:0;font-family:Helvetica, Arial, sans-serif;background:var(--bg);-webkit-font-smoothing:antialiased}
-  .app{height:100vh;display:flex;flex-direction:column;max-width:920px;margin:0 auto;box-shadow:0 0 0 rgba(0,0,0,0)}
-  /* Top bar */
-  .topbar{height:56px;background:var(--primary);color:#fff;display:flex;align-items:center;padding:8px 12px;gap:12px}
+  html,body{height:100%;margin:0;font-family:Helvetica, Arial, sans-serif;background:var(--bg);-webkit-font-smoothing:antialiased;touch-action:none}
+  .app{height:100vh;display:flex;flex-direction:column;max-width:920px;margin:0 auto}
+  .topbar{height:56px;background:var(--primary);color:#fff;display:flex;align-items:center;padding:8px 12px;gap:12px;user-select:none}
   .avatar{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,0.18);display:flex;align-items:center;justify-content:center;font-weight:700}
   .title{font-size:16px;font-weight:700}
   .subtitle{font-size:12px;color:rgba(255,255,255,0.9)}
-  /* code entry modal disguised */
   #codeModal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:transparent;z-index:999}
   .codeBox{width:92%;max-width:420px;background:var(--card);border-radius:12px;padding:18px;box-shadow:0 8px 30px rgba(0,0,0,0.12);display:flex;flex-direction:column;gap:12px}
-  .pinRow{display:flex;gap:8px}
   .pinInput{flex:1;padding:12px;border-radius:10px;border:1px solid #ddd;font-size:16px}
   .pinBtn{background:var(--primary);color:#fff;border:none;padding:12px;border-radius:10px;font-weight:700}
-  /* chat area */
   .chatArea{flex:1;display:flex;flex-direction:column;background:var(--bg)}
   .messages{flex:1;padding:14px;overflow:auto;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
   .row.me{align-self:flex-end}
@@ -41,20 +37,18 @@
   .bubble.me{background:var(--bubble-me)}
   .bubble.peer{background:var(--bubble-peer)}
   .meta{font-size:11px;color:var(--muted);margin-top:6px;text-align:right}
-  /* composer */
   .composer{display:flex;gap:8px;padding:10px;background:transparent;align-items:center}
   .attachBtn{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:transparent;border:none;font-size:20px}
   .msgInput{flex:1;padding:12px;border-radius:24px;border:1px solid #ddd;background:var(--card)}
   .sendBtn{background:var(--primary);color:#fff;border:none;padding:10px 16px;border-radius:20px;font-weight:700}
-  /* file preview */
   .fileThumb{display:flex;align-items:center;gap:8px;background:rgba(0,0,0,0.03);padding:8px;border-radius:8px}
   .thumbImg{width:72px;height:54px;object-fit:cover;border-radius:6px}
-  /* overlays */
   #unlockOverlay,#blockOverlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:99999}
   #blockOverlay{background:rgba(0,0,0,0.95);color:#fff;font-size:18px}
   #unlockOverlay .box{background:var(--card);padding:18px;border-radius:12px;min-width:260px}
-  /* small tweaks */
-  .dots{height:8px;width:8px;border-radius:50%;background:#4caf50}
+  .smallNote{font-size:12px;color:var(--muted);margin-top:8px}
+  /* gesture hint area (invisible) */
+  #gestureZone{position:fixed;left:0;top:0;width:100px;height:80px;opacity:0;z-index:2}
   @media(max-width:700px){ .codeBox{margin:20px} .title{font-size:15px} }
 </style>
 </head>
@@ -62,13 +56,13 @@
 
 <div class="app" id="app">
   <div class="topbar" id="topbar" title="">
-    <div class="avatar" id="avatar">C</div>
+    <div class="avatar" id="avatar">N</div>
     <div>
-      <div class="title" id="contactTitle">Chats</div>
-      <div class="subtitle" id="contactSub">Tap to chat</div>
+      <!-- Fake app identity (generic) -->
+      <div class="title" id="contactTitle">Notes</div>
+      <div class="subtitle" id="contactSub">Personal</div>
     </div>
     <div style="flex:1"></div>
-    <!-- hidden area for triple-tap theme toggle (no label) -->
     <div style="width:40px;height:40px;"></div>
   </div>
 
@@ -80,11 +74,14 @@
     <div class="composer">
       <button class="attachBtn" id="attachBtn">📎</button>
       <input type="file" id="fileInput" style="display:none" />
-      <input id="messageInput" class="msgInput" placeholder="Type a message" />
+      <input id="messageInput" class="msgInput" placeholder="Write note..." />
       <button class="sendBtn" id="sendBtn">Send</button>
     </div>
   </div>
 </div>
+
+<!-- invisible gesture zone in top-left for hidden gesture -->
+<div id="gestureZone" aria-hidden="true"></div>
 
 <!-- Code entry modal (disguised PIN) -->
 <div id="codeModal">
@@ -94,7 +91,7 @@
       <button class="pinBtn" id="codeEnter">Open</button>
       <button class="pinBtn" id="codeCancel" style="background:#e0e0e0;color:#000">Close</button>
     </div>
-    <div style="font-size:12px;color:var(--muted);">Enter the PIN you share with your contact.</div>
+    <div class="smallNote">Enter the PIN you share with your contact.</div>
   </div>
 </div>
 
@@ -114,22 +111,37 @@
 
 <script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tweetnacl-util@0.15.1/nacl-util.min.js"></script>
+
 <script>
-/* ---------- CONFIG ---------- */
+/* ---------------- CONFIG ---------------- */
 const SIGNAL_URL = "wss://free-signalling-chat.vercel.app/onlyus";
 
 /* ---------- THEME AUTOTOGGLE (triple-tap top-left) ---------- */
 (function(){
   const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   if(prefersDark) document.documentElement.setAttribute('data-theme','dark');
-  let taps=0; document.getElementById('topbar').addEventListener('click', (e)=>{
-    if(e.clientX < 120 && e.clientY < 80){ taps++; setTimeout(()=>taps=0,700); if(taps>=3){ if(document.documentElement.hasAttribute('data-theme')) document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme','dark'); taps=0; } }
+  let taps=0;
+  document.getElementById('topbar').addEventListener('click', (e)=>{
+    if(e.clientX < 120 && e.clientY < 80){
+      taps++;
+      setTimeout(()=>taps=0,700);
+      if(taps>=3){
+        if(document.documentElement.hasAttribute('data-theme')) document.documentElement.removeAttribute('data-theme');
+        else document.documentElement.setAttribute('data-theme','dark');
+        taps=0;
+      }
+    }
   });
 })();
 
-/* ---------- STATE ---------- */
-let ws=null, pc=null, dc=null;
-let myKey=null, theirKey=null, lastPin=null;
+/* ----------------- STATE ----------------- */
+let ws = null, pc = null, dc = null;
+let myKey = null, theirKey = null;
+let aesKey = null; // AES-GCM CryptoKey
+let lastPin = null;
+let peerJoined = false;
+let fakeMode = false;
+
 const messagesEl = document.getElementById('messages');
 const messageInput = document.getElementById('messageInput');
 const codeModal = document.getElementById('codeModal');
@@ -142,131 +154,261 @@ const unlockBtn = document.getElementById('unlockBtn');
 const blockOverlay = document.getElementById('blockOverlay');
 const fileInput = document.getElementById('fileInput');
 const filePreview = document.getElementById('filePreview');
+const attachBtn = document.getElementById('attachBtn');
+const gestureZone = document.getElementById('gestureZone');
 
 /* ---------- UI helpers ---------- */
-function addMessage(text, who='peer', time=null){
-  const r = document.createElement('div'); r.className = 'row '+(who==='me'?'me':''); 
+function addMessageHTML(html, who='peer', time=null){
+  const r = document.createElement('div'); r.className = 'row '+(who==='me'?'me':'');
   const b = document.createElement('div'); b.className='bubble '+(who==='me'?'me':'peer');
-  b.innerHTML = text + (time?`<div class="meta">${time}</div>`:''); 
+  b.innerHTML = html + (time?`<div class="meta">${time}</div>`:'');
   r.appendChild(b); messagesEl.appendChild(r); messagesEl.scrollTop = messagesEl.scrollHeight;
 }
-
-/* ---------- CRYPTO helpers ---------- */
-async function derivePin(pin){
-  const enc = new TextEncoder();
-  const salt = enc.encode('onlyus-whatsapp-salt');
-  const keyMat = await crypto.subtle.importKey('raw', enc.encode(pin), {name:'PBKDF2'}, false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({name:'PBKDF2', hash:'SHA-256', salt, iterations:130000}, keyMat, 256);
-  return new Uint8Array(bits);
+function addMessage(text, who='peer'){
+  addMessageHTML(escapeHtml(text), who, new Date().toLocaleTimeString());
 }
-function encryptObj(obj){
-  const s = JSON.stringify(obj);
+
+/* ---------- CRYPTO: derive both NaCl seed and AES key from PIN ---------- */
+async function deriveKeys(pin){
+  const enc = new TextEncoder();
+  const salt = enc.encode('onlyus-double-salt-v1');
+  const baseKey = await crypto.subtle.importKey('raw', enc.encode(pin), {name:'PBKDF2'}, false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({name:'PBKDF2', hash:'SHA-256', salt, iterations:140000}, baseKey, 512);
+  const bytes = new Uint8Array(bits);
+  const seed = bytes.slice(0,32);
+  const aesRaw = bytes.slice(32,64);
+  const aesKeyImported = await crypto.subtle.importKey('raw', aesRaw, {name:'AES-GCM'}, false, ['encrypt','decrypt']);
+  return { seed, aesKey: aesKeyImported, aesRaw };
+}
+
+/* ---------- AES-GCM ---------- */
+async function aesEncrypt(aesKeyImported, plainStr){
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = new TextEncoder();
+  const ct = await crypto.subtle.encrypt({name:'AES-GCM', iv}, aesKeyImported, enc.encode(plainStr));
+  const combined = new Uint8Array(iv.byteLength + ct.byteLength);
+  combined.set(iv,0);
+  combined.set(new Uint8Array(ct), iv.byteLength);
+  return btoa(String.fromCharCode(...combined));
+}
+async function aesDecrypt(aesKeyImported, b64){
+  const raw = Uint8Array.from(atob(b64), c=>c.charCodeAt(0));
+  const iv = raw.slice(0,12);
+  const ct = raw.slice(12);
+  const pt = await crypto.subtle.decrypt({name:'AES-GCM', iv}, aesKeyImported, ct);
+  const dec = new TextDecoder();
+  return dec.decode(pt);
+}
+
+/* ---------- NaCl box (packaging) ---------- */
+function naclBoxEncrypt(theirPubKeyUint8, aesCipherB64){
   const nonce = nacl.randomBytes(nacl.box.nonceLength);
+  const msgBytes = nacl.util.decodeUTF8(aesCipherB64);
   const myBox = nacl.box.keyPair.fromSecretKey(myKey.secretKey.slice(0,32));
-  const cipher = nacl.box(nacl.util.decodeUTF8(s), nonce, theirKey, myBox.secretKey);
-  const out = new Uint8Array(nonce.length + cipher.length); out.set(nonce); out.set(cipher, nonce.length);
+  const cipher = nacl.box(msgBytes, nonce, theirPubKeyUint8, myBox.secretKey);
+  const out = new Uint8Array(nonce.length + cipher.length);
+  out.set(nonce);
+  out.set(cipher, nonce.length);
   return nacl.util.encodeBase64(out);
 }
-function decryptB64(b64){
+function naclBoxDecrypt(theirPubKeyUint8, b64){
   const data = nacl.util.decodeBase64(b64);
-  const n = data.slice(0, nacl.box.nonceLength);
-  const c = data.slice(nacl.box.nonceLength);
+  const nonce = data.slice(0, nacl.box.nonceLength);
+  const cipher = data.slice(nacl.box.nonceLength);
   const myBox = nacl.box.keyPair.fromSecretKey(myKey.secretKey.slice(0,32));
-  const plain = nacl.box.open(c, n, theirKey, myBox.secretKey);
-  return JSON.parse(nacl.util.encodeUTF8(plain));
+  const plain = nacl.box.open(cipher, nonce, theirPubKeyUint8, myBox.secretKey);
+  if(!plain) throw new Error('NaCl box open failed');
+  return nacl.util.encodeUTF8(plain);
 }
 
-/* ---------- SIGNALING & AUTO-JOIN ---------- */
+/* ---------- Signalling & auto-join ---------- */
 codeEnter.addEventListener('click', async ()=>{
   if(ws) return;
   const pin = codeField.value.trim(); if(!pin) return;
   lastPin = pin;
-  const seed = await derivePin(pin);
-  myKey = nacl.sign.keyPair.fromSeed(seed.slice(0,32));
-  // open WS
+  const { seed, aesKey: importedAES } = await deriveKeys(pin);
+  myKey = nacl.sign.keyPair.fromSeed(seed);
+  aesKey = importedAES;
   ws = new WebSocket(SIGNAL_URL);
   ws.onopen = ()=>{ ws.send(JSON.stringify({type:'join'})); ws.send(JSON.stringify({type:'pub', pub:Array.from(myKey.publicKey)})); };
-  ws.onmessage = async (ev)=>{ let d; try{ d = JSON.parse(ev.data);}catch{} if(!d) return;
-    if(d.type==='pub'){ theirKey = new Uint8Array(d.pub); } 
-    if(d.type==='peer-joined'){ startRTC(true); } 
-    if(d.type==='offer'){ await startRTC(false); await pc.setRemoteDescription(d.sdp); const ans = await pc.createAnswer(); await pc.setLocalDescription(ans); ws.send(JSON.stringify({type:'answer', sdp:pc.localDescription})); }
-    if(d.type==='answer'){ await pc.setRemoteDescription(d.sdp); }
-    if(d.type==='ice'){ try{ await pc.addIceCandidate(d.c); }catch{} }
+  ws.onmessage = async (ev) => {
+    let d; try{ d = JSON.parse(ev.data);}catch{} if(!d) return;
+    if(d.type === 'pub'){ theirKey = new Uint8Array(d.pub); }
+    if(d.type === 'peer-joined'){ peerJoined = true; if(fakeMode){ fakeMode=false; messagesEl.innerHTML=''; } startRTC(true); }
+    if(d.type === 'offer'){ await startRTC(false); await pc.setRemoteDescription(d.sdp); const ans = await pc.createAnswer(); await pc.setLocalDescription(ans); ws.send(JSON.stringify({type:'answer', sdp:pc.localDescription})); }
+    if(d.type === 'answer'){ await pc.setRemoteDescription(d.sdp); }
+    if(d.type === 'ice'){ try{ await pc.addIceCandidate(d.c); }catch(e){} }
   };
-  // hide modal
   codeModal.style.display = 'none';
+  // start decoy if no peer after 6s
+  setTimeout(()=>{ if(!peerJoined) startFakeDecoy(); }, 6000);
 });
-
-/* allow closing modal quietly */
 codeCancel.addEventListener('click', ()=>{ codeModal.style.display='none'; });
 
 /* ---------- WebRTC ---------- */
-async function startRTC(init){
+async function startRTC(initiator){
   if(pc) return;
   pc = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
   pc.onicecandidate = e => { if(e.candidate && ws) ws.send(JSON.stringify({type:'ice', c:e.candidate})); };
-  if(init){
-    dc = pc.createDataChannel('ou'); setupDC();
+  if(initiator){
+    dc = pc.createDataChannel('onlyus'); setupDC();
     const offer = await pc.createOffer(); await pc.setLocalDescription(offer); ws.send(JSON.stringify({type:'offer', sdp:pc.localDescription}));
   } else {
     pc.ondatachannel = e => { dc = e.channel; setupDC(); };
   }
 }
 function setupDC(){
-  dc.onopen = ()=>{/* ready */};
-  dc.onmessage = ev => {
+  dc.onopen = ()=>{};
+  dc.onmessage = async (ev) => {
     try{
-      const pkt = decryptB64(ev.data);
-      if(pkt.t==='msg') addMessage(escapeHtml(pkt.text),'peer', new Date(pkt.ts).toLocaleTimeString());
-      if(pkt.t==='file') addMessage(`<img src="${pkt.data}" style="width:160px;border-radius:8px"><div style="font-size:12px;color:var(--muted)">${escapeHtml(pkt.name)}</div>`,'peer');
-    }catch(e){ console.error(e); }
+      const aesCipherB64 = naclBoxDecrypt(theirKey, ev.data);
+      const plainJSON = await aesDecrypt(aesKey, aesCipherB64);
+      const pkt = JSON.parse(plainJSON);
+      if(pkt.t === 'msg') addMessage(pkt.text,'peer');
+      if(pkt.t === 'file') addMessageHTML(`<img src="${pkt.data}" style="width:160px;border-radius:8px"><div style="font-size:12px;color:var(--muted)">${escapeHtml(pkt.name)}</div>`,'peer');
+    }catch(err){ console.error('msg decrypt failed', err); }
   };
 }
 
-/* ---------- Sending ---------- */
+/* ---------- Send ---------- */
 document.getElementById('sendBtn').addEventListener('click', sendMessage);
-messageInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMessage(); }});
-function sendMessage(){
+messageInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); sendMessage(); }});
+async function sendMessage(){
   const txt = messageInput.value.trim();
-  if(!txt && fileInput.files.length===0) return;
-  if(txt && dc && dc.readyState==='open'){
+  if(!txt && fileInput.files.length === 0) return;
+  if(txt && dc && dc.readyState === 'open' && theirKey){
     const pkt = {t:'msg', text:txt, ts:Date.now()};
-    dc.send(encryptObj(pkt));
-    addMessage(escapeHtml(txt),'me', new Date().toLocaleTimeString());
-    messageInput.value='';
-  } else if(fileInput.files.length){
-    sendFile(fileInput.files[0]); filePreview.innerHTML=''; fileInput.value='';
+    const jsonStr = JSON.stringify(pkt);
+    const aesB64 = await aesEncrypt(aesKey, jsonStr);
+    const boxed = naclBoxEncrypt(theirKey, aesB64);
+    dc.send(boxed);
+    addMessage(txt,'me');
+    messageInput.value = '';
+  } else if(fileInput.files.length && dc && dc.readyState === 'open' && theirKey){
+    sendFile(fileInput.files[0]);
+    filePreview.innerHTML=''; fileInput.value='';
+  } else {
+    if(txt){ addMessage(txt,'me'); messageInput.value=''; }
   }
 }
 
 /* ---------- Files ---------- */
-document.getElementById('attachBtn').addEventListener('click', ()=> fileInput.click());
-fileInput.addEventListener('change', ()=>{ const f = fileInput.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ filePreview.innerHTML = `<div class="fileThumb"><img class="thumbImg" src="${r.result}"><div style="font-size:13px">${f.name}</div></div>`; }; r.readAsDataURL(f);});
-function sendFile(f){ const r=new FileReader(); r.onload=()=>{ const pkt={t:'file', name:f.name, data:r.result, ts:Date.now()}; dc.send(encryptObj(pkt)); addMessage('📁 '+escapeHtml(f.name),'me'); }; r.readAsDataURL(f); }
+attachBtn.addEventListener('click', ()=> fileInput.click());
+fileInput.addEventListener('change', ()=>{ const f = fileInput.files[0]; if(!f) return; const r = new FileReader(); r.onload = ()=>{ filePreview.innerHTML = `<div class="fileThumb"><img class="thumbImg" src="${r.result}"><div style="font-size:13px">${f.name}</div></div>`; }; r.readAsDataURL(f); });
+async function sendFile(f){
+  const r = new FileReader();
+  r.onload = async ()=> {
+    const pkt = {t:'file', name:f.name, data:r.result, ts:Date.now()};
+    const jsonStr = JSON.stringify(pkt);
+    const aesB64 = await aesEncrypt(aesKey, jsonStr);
+    const boxed = naclBoxEncrypt(theirKey, aesB64);
+    dc.send(boxed);
+    addMessage('📁 '+f.name,'me');
+  };
+  r.readAsDataURL(f);
+}
+
+/* ---------- Fake Decoy Chat ---------- */
+function startFakeDecoy(){
+  fakeMode = true;
+  messagesEl.innerHTML = '';
+  addMessage('Hey! Are you coming today?','peer');
+  setTimeout(()=> addMessage('Yes — will be there by 7.','me'), 1000);
+  setTimeout(()=> addMessage('Bring the documents please.','peer'), 2200);
+  setTimeout(()=> addMessage('Sure. See you!','me'), 3200);
+  setTimeout(()=> addMessage('Shopping list:\n• Milk\n• Bread\n• Eggs','peer'), 4200);
+}
 
 /* ---------- LOCAL WIPE + UNLOCK + SCREENSHOT BLOCK ---------- */
-document.addEventListener('visibilitychange', ()=>{ if(document.hidden) doLocalWipe(); });
-let idleTimer=null; function resetIdle(){ clearTimeout(idleTimer); idleTimer=setTimeout(()=>{ if(document.hidden) doLocalWipe(); },3500); }
-window.onload=resetIdle; document.onmousemove=resetIdle; document.onkeypress=resetIdle; document.ontouchstart=resetIdle;
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden) localWipeAndBlock(); });
+let idleTimer = null;
+function resetIdle(){ clearTimeout(idleTimer); idleTimer = setTimeout(()=>{ if(document.hidden) localWipeAndBlock(); }, 3500); }
+window.onload = resetIdle; document.onmousemove = resetIdle; document.onkeypress = resetIdle; document.ontouchstart = resetIdle;
 
-function doLocalWipe(){
-  // wipe UI only
-  messagesEl = document.getElementById('messages');
-  messagesEl.innerHTML=''; filePreview.innerHTML='';
-  // show a quick opaque overlay to make screenshots useless
-  blockOverlay.style.display='flex';
-  setTimeout(()=>{ blockOverlay.style.display='none'; unlockOverlay.style.display='flex'; }, 250);
+function localWipeAndBlock(){
+  messagesEl.innerHTML = '';
+  filePreview.innerHTML = '';
+  blockOverlay.style.display = 'flex';
+  setTimeout(()=>{ blockOverlay.style.display = 'none'; unlockOverlay.style.display = 'flex'; }, 300);
 }
-unlockBtn.addEventListener('click', ()=>{ const v = unlockField.value.trim(); if(v && lastPin && v===lastPin){ unlockOverlay.style.display='none'; unlockField.value=''; } else { unlockField.style.border='1px solid red'; } });
+unlockBtn.addEventListener('click', ()=>{ const v = unlockField.value.trim(); if(v && lastPin && v === lastPin){ unlockOverlay.style.display = 'none'; unlockField.value = ''; } else { unlockField.style.border = '1px solid red'; } });
 
-/* Try to detect PrintScreen on desktop and briefly cover */
-window.addEventListener('keyup', (e)=>{ if(e.key==='PrintScreen'){ blockOverlay.style.display='flex'; setTimeout(()=>blockOverlay.style.display='none',600); } });
+/* ---------- PrintScreen detection ---------- */
+window.addEventListener('keyup', (e)=>{ if(e.key === 'PrintScreen'){ blockOverlay.style.display = 'flex'; setTimeout(()=>blockOverlay.style.display = 'none', 600); } });
 
-/* helper: escape HTML */
-function escapeHtml(s){ return s.replace(/[&<>"']/g, (m)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]) ); }
+/* ---------- Hidden gesture: triple swipe-up (top-left zone) ---------- */
+/*
+  Behavior:
+  - The small invisible gestureZone in top-left listens for vertical swipe gestures.
+  - If user performs three quick upward swipes (each swipe deltaY < -30) within 1200ms total, reveal code modal/unlock.
+  - Vibration feedback on supported devices.
+*/
+(function setupHiddenGesture(){
+  let swipeCount = 0;
+  let lastTime = 0;
+  let startY = null;
+  let gestureTimeout = null;
 
-/* NOTE: For absolute screenshot prevention use a native wrapper (APK) with FLAG_SECURE. I can build that for you if needed. */
+  function vib(duration=30){
+    if(navigator.vibrate) try{ navigator.vibrate(duration); }catch(e){}
+  }
+
+  gestureZone.addEventListener('pointerdown', (e)=>{
+    startY = e.clientY;
+  });
+
+  gestureZone.addEventListener('pointerup', (e)=>{
+    if(startY === null) return;
+    const dy = e.clientY - startY;
+    const now = Date.now();
+    // upward swipe (negative dy) threshold
+    if(dy < -30){
+      if(swipeCount === 0) lastTime = now;
+      swipeCount++;
+      vib(40);
+      // reset timeout
+      if(gestureTimeout) clearTimeout(gestureTimeout);
+      gestureTimeout = setTimeout(()=>{ swipeCount = 0; startY = null; }, 1200);
+      // if three within window -> trigger
+      if(swipeCount >= 3 && (now - lastTime) <= 1200){
+        swipeCount = 0;
+        startY = null;
+        if(typeof window.navigator.vibrate === 'function') vib(80);
+        // if unlock overlay already visible, focus input; else show code modal (unlock)
+        if(unlockOverlay.style.display === 'flex'){
+          unlockField.focus();
+        } else {
+          // if app was wiped or hidden, prefer unlock overlay; otherwise show code modal to re-enter PIN
+          if(document.hidden || messagesEl.innerHTML.trim() === ''){
+            unlockOverlay.style.display = 'flex';
+            unlockField.focus();
+          } else {
+            codeModal.style.display = 'flex';
+            codeField.focus();
+          }
+        }
+      }
+    }
+    startY = null;
+  });
+
+  // also support quick tap sequence fallback (3 quick taps inside zone)
+  let tapCount = 0;
+  gestureZone.addEventListener('click', (e)=>{
+    tapCount++;
+    setTimeout(()=>{ tapCount = 0; }, 700);
+    if(tapCount >= 4){ // 4 quick taps to avoid accidental
+      tapCount = 0;
+      vib(60);
+      codeModal.style.display = 'flex';
+      codeField.focus();
+    }
+  });
+})();
+
+/* ---------- Helper: escape HTML ---------- */
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, (m)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]) ); }
 
 </script>
 </body>
-</html>
+        </html>
