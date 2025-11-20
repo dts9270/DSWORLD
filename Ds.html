@@ -49,6 +49,11 @@
   .smallNote{font-size:12px;color:var(--muted);margin-top:8px}
   /* gesture hint area (invisible) */
   #gestureZone{position:fixed;left:0;top:0;width:100px;height:80px;opacity:0;z-index:2}
+  /* Calculator modal style for unlock (stealth) */
+  .calcModal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:transparent;z-index:999}
+  .calcBox{width:92%;max-width:420px;background:var(--card);border-radius:12px;padding:12px 14px;box-shadow:0 8px 30px rgba(0,0,0,0.12);}
+  .calcDisplay{background:#f4f4f4;padding:10px;border-radius:8px;margin-bottom:8px;min-height:44px;display:flex;align-items:center;justify-content:flex-end;font-size:20px}
+  .calcBtn{padding:12px;border-radius:8px;border:0;background:#fff;font-size:16px;box-shadow:0 1px 2px rgba(0,0,0,0.04)}
   @media(max-width:700px){ .codeBox{margin:20px} .title{font-size:15px} }
 </style>
 </head>
@@ -82,15 +87,43 @@
 <!-- invisible gesture zone in top-left for hidden gesture -->
 <div id="gestureZone" aria-hidden="true"></div>
 
-<!-- Code entry modal (disguised PIN) -->
-<div id="codeModal">
-  <div class="codeBox" role="dialog" aria-modal="true">
-    <input id="codeField" class="pinInput" placeholder="Access Note Key" autocomplete="off" />
-    <div style="display:flex;gap:8px">
-      <button class="pinBtn" id="codeEnter">Unlock</button>
-      <button class="pinBtn" id="codeCancel" style="background:#e0e0e0;color:#000">Close</button>
+<!-- Calculator-style unlock modal (stealth) -->
+<div id="calcModal" class="calcModal">
+  <div class="calcBox">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-weight:700">Calculator</div>
+      <div style="font-size:12px;color:var(--muted)">Access</div>
     </div>
-    <div class="smallNote">Enter your private note access code.</div>
+
+    <div id="calcDisplay" class="calcDisplay">0</div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+      <button class="calcBtn" data-val="7">7</button>
+      <button class="calcBtn" data-val="8">8</button>
+      <button class="calcBtn" data-val="9">9</button>
+      <button class="calcBtn" data-val="/">÷</button>
+
+      <button class="calcBtn" data-val="4">4</button>
+      <button class="calcBtn" data-val="5">5</button>
+      <button class="calcBtn" data-val="6">6</button>
+      <button class="calcBtn" data-val="*">×</button>
+
+      <button class="calcBtn" data-val="1">1</button>
+      <button class="calcBtn" data-val="2">2</button>
+      <button class="calcBtn" data-val="3">3</button>
+      <button class="calcBtn" data-val="-">−</button>
+
+      <button class="calcBtn" data-val="0">0</button>
+      <button class="calcBtn" data-val=".">.</button>
+      <button id="calcEquals" class="calcBtn">=</button>
+      <button class="calcBtn" data-val="+">+</button>
+
+      <button id="calcClear" class="pinBtn" style="grid-column:span 2;background:#e0e0e0;color:#000;padding:10px;border-radius:8px">C</button>
+      <button id="calcBack" class="pinBtn" style="background:#e0e0e0;color:#000;padding:10px;border-radius:8px">⌫</button>
+      <button id="calcUnlock" class="pinBtn" style="background:var(--primary);color:#fff;padding:10px;border-radius:8px">Unlock</button>
+    </div>
+
+    <div style="font-size:12px;color:var(--muted);margin-top:8px">Use as normal calculator. To open chat, enter access code and press <strong>Unlock</strong>.</div>
   </div>
 </div>
 
@@ -144,10 +177,6 @@ let fakeMode = false;
 
 const messagesEl = document.getElementById('messages');
 const messageInput = document.getElementById('messageInput');
-const codeModal = document.getElementById('codeModal');
-const codeField = document.getElementById('codeField');
-const codeEnter = document.getElementById('codeEnter');
-const codeCancel = document.getElementById('codeCancel');
 const unlockOverlay = document.getElementById('unlockOverlay');
 const unlockField = document.getElementById('unlockField');
 const unlockBtn = document.getElementById('unlockBtn');
@@ -222,38 +251,42 @@ function naclBoxDecrypt(theirPubKeyUint8, b64){
 }
 
 /* ---------- Signalling & auto-join ---------- */
-codeEnter.addEventListener('click', async ()=>{
-  if(ws) return;
-  const pin = codeField.value.trim(); if(!pin) return;
-  lastPin = pin;
-  const { seed, aesKey: importedAES, aesRaw } = await deriveKeys(pin);
-  myKey = nacl.sign.keyPair.fromSeed(seed);
-  aesKey = importedAES;
-  aesRawBytes = aesRaw;
-  ws = new WebSocket(SIGNAL_URL);
-  ws.onopen = ()=>{ ws.send(JSON.stringify({type:'join'})); ws.send(JSON.stringify({type:'pub', pub:Array.from(myKey.publicKey)})); };
-  ws.onmessage = async (ev) => {
-    let d; try{ d = JSON.parse(ev.data);}catch{} if(!d) return;
-    if(d.type === 'pub'){ theirKey = new Uint8Array(d.pub); }
-    if(d.type === 'peer-joined'){ peerJoined = true; if(fakeMode){ fakeMode=false; messagesEl.innerHTML=''; } startRTC(true); }
-    if(d.type === 'offer'){ await startRTC(false); await pc.setRemoteDescription(d.sdp); const ans = await pc.createAnswer(); await pc.setLocalDescription(ans); ws.send(JSON.stringify({type:'answer', sdp:pc.localDescription})); }
-    if(d.type === 'answer'){ await pc.setRemoteDescription(d.sdp); }
-    if(d.type === 'ice'){ try{ await pc.addIceCandidate(d.c); }catch(e){} }
-  };
-  codeModal.style.display = 'none';
-  // start decoy if no peer after 40s (longer window for mobile-to-mobile)
-  setTimeout(()=>{ if(!peerJoined) startFakeDecoy(); }, 40000);
-});
-codeCancel.addEventListener('click', ()=>{ codeModal.style.display='none'; });
+/* join flow (called from calculator unlock) */
+async function joinWithPin(pin){
+  try{
+    if(ws) return;
+    lastPin = pin;
+    const { seed, aesKey: importedAES, aesRaw } = await deriveKeys(pin);
+    myKey = nacl.sign.keyPair.fromSeed(seed);
+    aesKey = importedAES;
+    aesRawBytes = aesRaw;
+    ws = new WebSocket(SIGNAL_URL);
+    ws.onopen = ()=>{ ws.send(JSON.stringify({type:'join'})); ws.send(JSON.stringify({type:'pub', pub:Array.from(myKey.publicKey)})); };
+    ws.onmessage = async (ev) => {
+      let d; try{ d = JSON.parse(ev.data);}catch{} if(!d) return;
+      if(d.type === 'pub'){ theirKey = new Uint8Array(d.pub); }
+      if(d.type === 'peer-joined'){ peerJoined = true; if(fakeMode){ fakeMode=false; messagesEl.innerHTML=''; } startRTC(true); }
+      if(d.type === 'offer'){ await startRTC(false); await pc.setRemoteDescription(d.sdp); const ans = await pc.createAnswer(); await pc.setLocalDescription(ans); ws.send(JSON.stringify({type:'answer', sdp:pc.localDescription})); }
+      if(d.type === 'answer'){ await pc.setRemoteDescription(d.sdp); }
+      if(d.type === 'ice'){ try{ await pc.addIceCandidate(d.c); }catch(e){} }
+    };
+    // hide calc modal
+    document.getElementById('calcModal').style.display = 'none';
+    setTimeout(()=>{ if(!peerJoined) startFakeDecoy(); }, 40000);
+  }catch(e){
+    console.error('joinWithPin failed', e);
+    alert('Unable to use that code.');
+  }
+}
 
-/* ---------- WebRTC with TURN added ---------- */
+/* ---------- WebRTC with reliable TURN (updated) ---------- */
 async function startRTC(initiator){
   if(pc) return;
   pc = new RTCPeerConnection({
     iceServers:[
       { urls: "stun:stun.l.google.com:19302" },
-      // TURN server (example public/free-ish) — replace with paid TURN for production reliability
-      { urls: "turn:relay1.expressturn.com:3478", username: "efree", credential: "efree" }
+      // RELIABLE public TURN (recommended: replace with paid TURN for production)
+      { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" }
     ]
   });
   pc.onicecandidate = e => { if(e.candidate && ws) ws.send(JSON.stringify({type:'ice', c:e.candidate})); };
@@ -266,7 +299,7 @@ async function startRTC(initiator){
 }
 
 function setupDC(){
-  dc.onopen = ()=>{};
+  dc.onopen = ()=>{ console.log('DataChannel open'); };
   dc.onmessage = async (ev) => {
     try{
       const aesCipherB64 = naclBoxDecrypt(theirKey, ev.data);
@@ -278,17 +311,15 @@ function setupDC(){
   };
 }
 
-/* ---------- Send (local display + try send if connected) ---------- */
+/* ---------- Send (local display + attempt network send) ---------- */
 document.getElementById('sendBtn').addEventListener('click', sendMessage);
-messageInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); sendMessage(); }});
+document.getElementById('messageInput').addEventListener('keydown', (e)=>{ if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); sendMessage(); }});
 async function sendMessage(){
   const txt = messageInput.value.trim();
   if(!txt && fileInput.files.length === 0) return;
 
-  // Always show locally immediately
   if(txt){ addMessage(txt,'me'); }
 
-  // Try to send over DC if ready and we have peer key
   if(txt && dc && dc.readyState === 'open' && theirKey){
     try{
       const pkt = {t:'msg', text:txt, ts:Date.now()};
@@ -299,7 +330,6 @@ async function sendMessage(){
     }catch(e){ console.error('send failed', e); }
   }
 
-  // file send (if selected)
   if(fileInput.files.length && dc && dc.readyState === 'open' && theirKey){
     sendFile(fileInput.files[0]);
     filePreview.innerHTML=''; fileInput.value='';
@@ -380,7 +410,7 @@ window.addEventListener('keyup', (e)=>{ if(e.key === 'PrintScreen'){ blockOverla
         if(unlockOverlay.style.display === 'flex'){ unlockField.focus(); }
         else {
           if(document.hidden || messagesEl.innerHTML.trim() === ''){ unlockOverlay.style.display = 'flex'; unlockField.focus(); }
-          else { codeModal.style.display = 'flex'; codeField.focus(); }
+          else { document.getElementById('calcModal').style.display = 'flex'; }
         }
       }
     }
@@ -394,15 +424,13 @@ window.addEventListener('keyup', (e)=>{ if(e.key === 'PrintScreen'){ blockOverla
     if(tapCount >= 4){
       tapCount = 0;
       vib(60);
-      codeModal.style.display = 'flex';
-      codeField.focus();
+      document.getElementById('calcModal').style.display = 'flex';
     }
   });
 })();
 
-/* ---------- Helper: escape HTML ---------- */
-function escapeHtml(s){ return String(s).replace(/[&<>"']/g, (m)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]) ); }
-
-</script>
-</body>
-</html>
+/* ---------- Calculator logic (for calcModal) ---------- */
+(function(){
+  const display = document.getElementById('calcDisplay');
+  let expr = '0';
+  let justEvaluated = fal
